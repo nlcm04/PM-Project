@@ -3,16 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutGrid, LineChart, Sparkles } from "lucide-react";
+import { DATA_MODE } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/discovery", label: "Daily Discovery", icon: Sparkles },
   { href: "/portfolio", label: "Portfolio Health", icon: LineChart },
 ];
 
-const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+const MODE_BANNER: Record<string, string> = {
+  static: "Real-data snapshot — read-only, updated daily",
+  demo: "Demo mode — sample data, no live backend",
+};
 
 export function Sidebar() {
   const pathname = usePathname();
+  const banner = MODE_BANNER[DATA_MODE];
 
   return (
     <aside className="flex h-screen w-64 flex-col bg-brown-950 border-r border-brown-700/60 px-4 py-6">
@@ -20,12 +25,12 @@ export function Sidebar() {
         <LayoutGrid className="h-6 w-6 text-amber-400" />
         <span className="text-lg font-bold tracking-tight text-cream">HOSE Quant</span>
       </div>
-      {IS_DEMO && (
+      {banner && (
         <div className="mb-6 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-center text-[11px] font-medium text-amber-300">
-          Demo mode &mdash; sample data, no live backend
+          {banner}
         </div>
       )}
-      <nav className={`flex flex-col gap-1 ${IS_DEMO ? "" : "mt-6"}`}>
+      <nav className={`flex flex-col gap-1 ${banner ? "" : "mt-6"}`}>
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = pathname?.startsWith(href);
           return (

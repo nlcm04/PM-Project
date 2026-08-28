@@ -10,24 +10,62 @@ Daily Discovery UI.
 
 **https://nlcm04.github.io/PM-Project/**
 
-This is the frontend only, built as a static export with sample/fixture data
-(`frontend/lib/sampleData.ts`) -- there is no live backend or database behind
-it. GitHub Pages can only serve static files, so it can't run FastAPI or
-Postgres; this demo exists to show the UI (Daily Discovery, Portfolio Health,
-institutional flow alerts), not real screening output. A "Demo mode" badge is
-shown in the sidebar so it's never confused for live data. Approve/Reject
-buttons work against the in-memory sample data (resets on reload).
+GitHub Pages can only serve static files -- it can't run FastAPI or Postgres.
+Rather than fake that with sample data, `backend/scripts/build_static_snapshot.py`
+runs the **real** screening + backtest pipeline against **live vnstock data**
+at CI build time (no database involved) and writes the result as static JSON
+that the frontend fetches directly. Every number on the live site came out of
+a real vnstock pull; nothing is fabricated. It refreshes daily. It's still
+read-only, though -- there is no server behind the deployed site to persist an
+Approve/Reject decision to, and the sidebar says so.
+
+Deliberate scope limits of this snapshot, surfaced on the site itself (and in
+`frontend/public/data/meta.json`), not hidden:
+- **Curated ~20-name universe, not the full ~723 HOSE tickers**, and
+  financials/banks are excluded entirely. Two reasons: a live pull showed
+  ACB (a bank) returning `None` for ROIC/EV-EBITDA/CFO-based ratios -- those
+  metrics don't fit bank accounting, so scoring them would be silently wrong,
+  not silently missing; and pulling ~700 tickers per run against a free,
+  scraping-based API on every CI run isn't a considerate load. vnstock's rate
+  limiter was observed live to kill the whole process (`SystemExit`, not a
+  catchable exception) after roughly 10 tickers when called too fast --
+  `build_static_snapshot.py` paces requests at 3.5s apart and stops early
+  rather than crash if it still gets rate-limited.
+- **Governance fields are assumed clean**, not verified -- vnstock doesn't
+  expose auditor opinion, filing status, or the HOSE warning list (see
+  `app/data/vnstock_client.py`), so this list is "hand-picked blue chips",
+  not "governance-screened".
+- **Out-of-sample backtest, on purpose**: expected returns, the covariance
+  matrix, and portfolio weights are computed on the first ~70% of the lookback
+  window; Sharpe, drawdown, the equity curve, and the vs-random-baskets
+  comparison are evaluated on the last ~30%, which weight-selection never
+  sees. Computing both halves on the same window would inflate the numbers --
+  this is why the live demo's Sharpe is a modest ~0.14, not a suspiciously
+  great backtest.
+- Only names the optimizer actually allocates a real weight to are shown as
+  "picks" -- a shortlisted name that the optimizer weighted at ~0% (this
+  happens; verified live) is dropped rather than shown as an actionable
+  recommendation with no allocation.
 
 **How it's wired up** (`.github/workflows/deploy_frontend.yml`, runs on every
-push to `main` that touches `frontend/**`):
-1. Builds `frontend/` with `next build`, with `NEXT_PUBLIC_DEMO_MODE=true`
-   (routes every `lib/api.ts` call to the sample fixtures instead of a real
-   API) and `NEXT_PUBLIC_BASE_PATH=/PM-Project` (GitHub Pages project sites
-   are served under `/<repo-name>/`, not `/`) set in `next.config.mjs`, which
-   also sets `output: "export"` to produce plain static HTML/CSS/JS in
-   `frontend/out/` instead of requiring a Node server.
-2. Publishes `frontend/out/` via `actions/upload-pages-artifact` +
+push touching `frontend/**`/`backend/**`, on a daily schedule, and on manual
+dispatch):
+1. Installs backend deps and runs `build_static_snapshot.py`, writing
+   `picks.json`, `holdings.json` (always empty -- no brokerage integration),
+   `performance.json`, `flow_alerts.json`, and `meta.json` into
+   `frontend/public/data/`.
+2. Builds `frontend/` with `next build`, `NEXT_PUBLIC_DATA_MODE=static`
+   (routes every `lib/api.ts` call to those JSON files instead of a live API)
+   and `NEXT_PUBLIC_BASE_PATH=/PM-Project` (GitHub Pages project sites are
+   served under `/<repo-name>/`, not `/`), set in `next.config.mjs`, which
+   also sets `output: "export"` for plain static HTML/CSS/JS.
+3. Publishes `frontend/out/` via `actions/upload-pages-artifact` +
    `actions/deploy-pages`.
+
+There's also a third mode, `NEXT_PUBLIC_DATA_MODE=demo`, using
+`frontend/lib/sampleData.ts` -- pure fixture data with no vnstock calls at
+all, useful for UI development without waiting on a live data pull. The
+default (unset) mode is `api`, which talks to a real FastAPI backend.
 
 **One-time repo setting this depends on** (already done for this repo, but
 needed if you fork it or start fresh): Settings -> Pages -> Build and
@@ -35,10 +73,10 @@ deployment -> Source must be **"GitHub Actions"**, not "Deploy from a
 branch". If it's on a branch source, the workflow's `deploy-pages` step will
 either fail or silently deploy nowhere useful.
 
-To point the demo at a real backend instead of sample data, drop
-`NEXT_PUBLIC_DEMO_MODE` from the workflow's `env:` block and set
-`NEXT_PUBLIC_API_BASE_URL` there to your hosted FastAPI URL -- see "What's
-real vs. what's a v1 foundation" below for what hosting that requires.
+To point the site at a real backend instead (making Approve/Reject actually
+persist), set `NEXT_PUBLIC_DATA_MODE=api` and `NEXT_PUBLIC_API_BASE_URL` to
+your hosted FastAPI URL in the workflow's `env:` block -- see "What's real
+vs. what's a v1 foundation" below for what hosting that requires.
 
 ## What's real vs. what's a v1 foundation
 
@@ -50,7 +88,9 @@ not a deployed production system. Specifically:
   OHLCV history for VNM, the full 723-ticker HOSE universe, a live price board
   (ref/ceiling/floor + foreign buy/sell value), and value/quality ratios
   (P/E, P/B, EV/EBITDA, ROCE, interest coverage, CFO/Assets) for VNM, VIC, and
-  ACB. All 30 backend unit tests pass. The FastAPI app imports cleanly and its
+  ACB, and a real screening + out-of-sample backtest run for the GitHub Pages
+  snapshot (see below). All 33 backend unit tests pass. The FastAPI app
+  imports cleanly and its
   OpenAPI schema generates. The Next.js frontend builds cleanly under strict
   TypeScript and was verified in a browser (correct theme, fonts, routing, and
   graceful empty/error states with no backend attached).

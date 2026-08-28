@@ -1,5 +1,8 @@
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const isStaticExport = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+// "static" (real-data GitHub Pages snapshot) and "demo" (sample fixtures)
+// both ship with no backend behind them, so both need a static export.
+// Only "api" (the default) runs as a normal Next.js server.
+const isStaticExport = process.env.NEXT_PUBLIC_DATA_MODE === "static" || process.env.NEXT_PUBLIC_DATA_MODE === "demo";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

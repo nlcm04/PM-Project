@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { HealthChart } from "@/components/portfolio/HealthChart";
 import { FactorExposureChart } from "@/components/portfolio/FactorExposureChart";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
+import { SnapshotMetaBanner } from "@/components/ui/SnapshotMetaBanner";
 import { getHoldings, getPerformanceHealth, type Holding, type PerformanceSnapshot } from "@/lib/api";
 
 export default function PortfolioPage() {
@@ -36,14 +37,20 @@ export default function PortfolioPage() {
         </div>
       )}
 
+      <SnapshotMetaBanner />
+
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <div className="text-xs text-cream/50">NAV</div>
-          <div className="mt-1 text-2xl font-bold text-cream">{latest ? latest.nav.toLocaleString() : "—"}</div>
+          <div className="mt-1 text-2xl font-bold text-cream">
+            {latest ? Math.round(latest.nav).toLocaleString() : "—"}
+          </div>
         </Card>
         <Card>
           <div className="text-xs text-cream/50">Sharpe Ratio</div>
-          <div className="mt-1 text-2xl font-bold text-amber-400">{latest ? latest.sharpe_ratio.toFixed(2) : "—"}</div>
+          <div className="mt-1 text-2xl font-bold text-amber-400">
+            {latest?.sharpe_ratio != null ? latest.sharpe_ratio.toFixed(2) : "—"}
+          </div>
         </Card>
         <Card>
           <div className="text-xs text-cream/50">Max Drawdown</div>

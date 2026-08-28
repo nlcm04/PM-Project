@@ -10,6 +10,10 @@ node_modules/
 .next/
 frontend/out/
 
+# Generated at CI build time by backend/scripts/build_static_snapshot.py --
+# never commit a local pull, it goes stale immediately.
+frontend/public/data/
+
 # Env files (never commit real secrets)
 .env
 .env.local

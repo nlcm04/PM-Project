@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/Badge";
-import type { Holding } from "@/lib/api";
+import { IS_READ_ONLY, type Holding } from "@/lib/api";
 
 const STATUS_VARIANT = {
   OPEN: "success",
@@ -9,7 +9,13 @@ const STATUS_VARIANT = {
 
 export function HoldingsTable({ holdings }: { holdings: Holding[] }) {
   if (holdings.length === 0) {
-    return <p className="text-sm text-cream/50">No holdings yet &mdash; approve a pick to open one.</p>;
+    return (
+      <p className="text-sm text-cream/50">
+        {IS_READ_ONLY
+          ? "This is a read-only real-data snapshot with no brokerage integration — there are no real holdings to show."
+          : "No holdings yet — approve a pick to open one."}
+      </p>
+    );
   }
 
   return (

@@ -18,6 +18,7 @@ from app.models.fundamentals import FundamentalsQuarterly
 from app.models.scoring import DailyStockPick, FactorScore
 from app.quant import backtest, diagnostics, factors, governance, grinold, optimizer
 from app.quant.governance import GovernanceCheckInput
+from app.utils import ordinal
 
 HIGHER_IS_BETTER = {
     "earnings_yield": True,
@@ -114,7 +115,7 @@ def persist_daily_picks(
         asset = db.get(Asset, p["asset_id"])
         bt = backtest_results_by_asset.get(p["asset_id"], {})
         rationale = (
-            f"Composite score at {p['percentile_rank']:.0f}th percentile; "
+            f"Composite score at {ordinal(round(p['percentile_rank']))} percentile; "
             f"Grinold expected active return {p['expected_active_return']:.4f}."
         )
         row = DailyStockPick(

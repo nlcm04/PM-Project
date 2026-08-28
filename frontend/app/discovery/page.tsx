@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PickCard } from "@/components/discovery/PickCard";
 import { FlowAlertPanel } from "@/components/discovery/FlowAlertPanel";
+import { SnapshotMetaBanner } from "@/components/ui/SnapshotMetaBanner";
 import { getFlowAlerts, getPicks, type DailyStockPick, type FlowAlert } from "@/lib/api";
 
 export default function DiscoveryPage() {
@@ -36,6 +37,8 @@ export default function DiscoveryPage() {
           Could not reach the backend API ({error}). Is FastAPI running on NEXT_PUBLIC_API_BASE_URL?
         </div>
       )}
+
+      <SnapshotMetaBanner />
 
       <div className="mb-8">
         <FlowAlertPanel alerts={flowAlerts} />

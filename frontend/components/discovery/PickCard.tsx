@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { FlowAlertBadge } from "@/components/discovery/FlowAlertBadge";
-import { approvePick, rejectPick, type DailyStockPick, type FlowAlert } from "@/lib/api";
+import { approvePick, IS_READ_ONLY, rejectPick, type DailyStockPick, type FlowAlert } from "@/lib/api";
+import { ordinal } from "@/lib/format";
 
 interface PickCardProps {
   pick: DailyStockPick;
@@ -44,25 +45,31 @@ export function PickCard({ pick, flowAlert, onDecided }: PickCardProps) {
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Badge>Projected Sharpe {pick.projected_sharpe.toFixed(2)}</Badge>
-        {typeof backtest.percentile_rank === "number" && (
-          <Badge>{(backtest.percentile_rank as number).toFixed(0)}th pct vs. random baskets</Badge>
+        {typeof backtest.vs_random_baskets_percentile === "number" && (
+          <Badge>{ordinal(backtest.vs_random_baskets_percentile as number)} pct vs. random baskets</Badge>
         )}
         {flowAlert && <FlowAlertBadge alert={flowAlert} />}
       </div>
 
       {pick.status === "PENDING" ? (
-        <div className="mt-5 flex gap-2">
-          <Button onClick={() => handle("approve")} disabled={busy !== null}>
-            <span className="flex items-center gap-1.5">
-              <Check className="h-4 w-4" /> Approve
-            </span>
-          </Button>
-          <Button variant="ghost" onClick={() => handle("reject")} disabled={busy !== null}>
-            <span className="flex items-center gap-1.5">
-              <X className="h-4 w-4" /> Reject
-            </span>
-          </Button>
-        </div>
+        IS_READ_ONLY ? (
+          <p className="mt-5 text-xs text-cream/40">
+            Read-only real-data snapshot &mdash; approvals can&rsquo;t be persisted without a live backend.
+          </p>
+        ) : (
+          <div className="mt-5 flex gap-2">
+            <Button onClick={() => handle("approve")} disabled={busy !== null}>
+              <span className="flex items-center gap-1.5">
+                <Check className="h-4 w-4" /> Approve
+              </span>
+            </Button>
+            <Button variant="ghost" onClick={() => handle("reject")} disabled={busy !== null}>
+              <span className="flex items-center gap-1.5">
+                <X className="h-4 w-4" /> Reject
+              </span>
+            </Button>
+          </div>
+        )
       ) : (
         <div className="mt-5">
           <Badge variant={pick.status === "APPROVED" ? "success" : "danger"}>{pick.status}</Badge>

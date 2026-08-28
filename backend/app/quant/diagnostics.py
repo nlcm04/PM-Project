@@ -70,16 +70,32 @@ def run_factor_regression_diagnostics(factor_df: pd.DataFrame, forward_returns: 
     """
     pruned, dropped = prune_by_vif(factor_df)
     aligned = pd.concat([pruned, forward_returns.rename("fwd_ret")], axis=1).dropna()
-    if len(aligned) < len(pruned.columns) + 2:
-        return {"note": "insufficient observations for regression diagnostics", "vif_dropped": dropped}
+    # Breusch-Godfrey's auxiliary regression needs real headroom beyond the
+    # bare minimum for OLS to be identified at all -- verified live: a
+    # regression with 8 observations and 3 surviving factors passed a
+    # `len(aligned) < len(pruned.columns) + 2` check but still raised inside
+    # statsmodels ("dimensions that are asymptotically non-normal"). Require
+    # a larger margin, and fall back gracefully if the fit still fails.
+    if len(aligned) < 2 * (len(pruned.columns) + 2):
+        return {
+            "note": "insufficient observations for reliable regression diagnostics",
+            "vif_dropped_factors": dropped,
+            "n_obs": len(aligned),
+        }
 
     X = sm.add_constant(aligned[pruned.columns])
     y = aligned["fwd_ret"]
-    model = sm.OLS(y, X).fit()
-
-    return {
-        "vif_dropped_factors": dropped,
-        "adf_forward_returns": run_adf(forward_returns),
-        "breusch_pagan": run_breusch_pagan(model.resid.values, X.values),
-        "breusch_godfrey": run_breusch_godfrey(model),
-    }
+    try:
+        model = sm.OLS(y, X).fit()
+        return {
+            "vif_dropped_factors": dropped,
+            "adf_forward_returns": run_adf(forward_returns),
+            "breusch_pagan": run_breusch_pagan(model.resid.values, X.values),
+            "breusch_godfrey": run_breusch_godfrey(model),
+        }
+    except (ValueError, np.linalg.LinAlgError) as exc:
+        return {
+            "note": f"regression diagnostics failed on this sample: {exc}",
+            "vif_dropped_factors": dropped,
+            "n_obs": len(aligned),
+        }
