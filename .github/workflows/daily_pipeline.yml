@@ -1,0 +1,41 @@
+name: Daily HOSE Screening Pipeline
+
+# 15:30 ICT (UTC+7) on weekdays = 08:30 UTC, after HOSE market close.
+# NOTE: this job needs a DATABASE_URL secret pointing to a reachable, hosted
+# Postgres/TimescaleDB instance (e.g. Timescale Cloud free tier). A local
+# docker-compose database is NOT reachable from GitHub-hosted runners -- see
+# README.md "Automation pipeline" for setup steps. Until that secret exists,
+# this workflow will run but fail at the ingestion/screening step.
+on:
+  schedule:
+    - cron: "30 8 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  run-daily-screen:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest latest market data
+        run: python -m scripts.ingest_market_data
+
+      - name: Detect institutional order-flow anomalies
+        run: python -m scripts.detect_flow_alerts
+
+      - name: Run daily screening pipeline
+        run: python -m scripts.run_daily_pipeline
