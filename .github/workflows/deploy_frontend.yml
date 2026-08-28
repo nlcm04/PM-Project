@@ -5,8 +5,11 @@ name: Deploy Real-Data Demo to GitHub Pages
 # data) and publishes it to GitHub Pages. There is still no backend or
 # database behind the deployed site itself -- GitHub Pages only serves static
 # files -- so this bakes a fresh real snapshot into the site at build time
-# instead. Runs on every push touching frontend/** or backend/**, plus a
-# daily schedule so the public site keeps reflecting fresh data. See
+# instead. Runs on every push touching frontend/** or backend/**, plus
+# hourly during HOSE trading hours so the public site's volume-anomaly
+# detection stays reasonably current. This is the closest a static site can
+# get to "real-time" -- GitHub's scheduler isn't guaranteed to fire exactly
+# on the minute, and each run still takes ~10-15 min end to end. See
 # README.md "Live demo on GitHub Pages" for the one-time repo setting this
 # depends on.
 on:
@@ -17,7 +20,7 @@ on:
       - "backend/**"
       - ".github/workflows/deploy_frontend.yml"
   schedule:
-    - cron: "0 9 * * 1-5" # 16:00 ICT, after the daily screening pipeline's 15:30 ICT run
+    - cron: "0 2-8 * * 1-5" # hourly, 09:00-15:00 ICT (HOSE trading hours), weekdays
   workflow_dispatch: {}
 
 permissions:

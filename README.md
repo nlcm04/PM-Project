@@ -15,45 +15,55 @@ Rather than fake that with sample data, `backend/scripts/build_static_snapshot.p
 runs the **real** screening + backtest pipeline against **live vnstock data**
 at CI build time (no database involved) and writes the result as static JSON
 that the frontend fetches directly. Every number on the live site came out of
-a real vnstock pull; nothing is fabricated. It refreshes daily. It's still
-read-only, though -- there is no server behind the deployed site to persist an
-Approve/Reject decision to, and the sidebar says so.
+a real vnstock pull; nothing is fabricated. It refreshes **hourly during HOSE
+trading hours** -- the closest a static site can get to real-time. Approving
+a pick doesn't persist anywhere (no server to persist it to), but your own
+**portfolio (cash, holdings, trading fee) is editable directly on the site**
+and saved to your browser's localStorage -- see "Personal portfolio tracking"
+below.
 
 Deliberate scope limits of this snapshot, surfaced on the site itself (and in
 `frontend/public/data/meta.json`), not hidden:
-- **Curated ~20-name universe, not the full ~723 HOSE tickers**, and
-  financials/banks are excluded entirely. Two reasons: a live pull showed
-  ACB (a bank) returning `None` for ROIC/EV-EBITDA/CFO-based ratios -- those
-  metrics don't fit bank accounting, so scoring them would be silently wrong,
-  not silently missing; and pulling ~700 tickers per run against a free,
-  scraping-based API on every CI run isn't a considerate load. vnstock's rate
-  limiter was observed live to kill the whole process (`SystemExit`, not a
-  catchable exception) after roughly 10 tickers when called too fast --
-  `build_static_snapshot.py` paces requests at 3.5s apart and stops early
-  rather than crash if it still gets rate-limited.
+- **~60-name curated universe, not the full ~723 HOSE tickers.** Two reasons:
+  vnstock's free-tier rate limiter was observed live to kill the whole Python
+  process (`SystemExit`, not a catchable exception) after roughly 10 tickers
+  when called too fast, and pulling the full market every run at a safe pace
+  would take well over an hour, defeating an hourly refresh; and pulling ~700
+  tickers per run against a free, scraping-based API on every CI run isn't a
+  considerate load either way. `build_static_snapshot.py` paces requests at
+  3.5s apart and stops early rather than crash if it still gets rate-limited.
+- **Financials (banks, brokers) are included**, scored from whichever of the
+  5 value/quality factors actually apply to their accounting -- a live pull
+  showed ACB (a bank) returning `None` for ROIC/EV-EBITDA/CFO-based ratios,
+  so a bank typically scores off just earnings_yield/book_to_market (2 of 5,
+  disclosed per-row as `factors_used_count`). An earlier version of this
+  screen also disqualified every bank outright, treating "no interest
+  coverage data" the same as "fails the 3x interest-coverage check" --
+  verified live and fixed; missing now means "not evaluated," not "failed."
 - **Governance fields are assumed clean**, not verified -- vnstock doesn't
   expose auditor opinion, filing status, or the HOSE warning list (see
-  `app/data/vnstock_client.py`), so this list is "hand-picked blue chips",
-  not "governance-screened".
+  `app/data/vnstock_client.py`), so this list is "hand-picked large/mid
+  caps", not "governance-screened".
 - **Out-of-sample backtest, on purpose**: expected returns, the covariance
-  matrix, and portfolio weights are computed on the first ~70% of the lookback
-  window; Sharpe, drawdown, the equity curve, and the vs-random-baskets
-  comparison are evaluated on the last ~30%, which weight-selection never
-  sees. Computing both halves on the same window would inflate the numbers --
-  this is why the live demo's Sharpe is a modest ~0.14, not a suspiciously
-  great backtest.
-- Only names the optimizer actually allocates a real weight to are shown as
-  "picks" -- a shortlisted name that the optimizer weighted at ~0% (this
+  matrix, and portfolio weights (for the small top-N optimizer shortlist) are
+  computed on the first ~70% of the lookback window; Sharpe, drawdown, the
+  equity curve, and the vs-random-baskets comparison are evaluated on the
+  last ~30%, which weight-selection never sees. Computing both halves on the
+  same window would inflate the numbers.
+- Only shortlisted names the optimizer actually allocates a real weight to
+  are shown in "Today's Optimizer Shortlist" -- a name weighted at ~0% (this
   happens; verified live) is dropped rather than shown as an actionable
-  recommendation with no allocation.
+  recommendation with no allocation. It still appears, unstarred, in the full
+  rankings table.
 
 **How it's wired up** (`.github/workflows/deploy_frontend.yml`, runs on every
-push touching `frontend/**`/`backend/**`, on a daily schedule, and on manual
-dispatch):
+push touching `frontend/**`/`backend/**`, hourly during HOSE trading hours,
+and on manual dispatch):
 1. Installs backend deps and runs `build_static_snapshot.py`, writing
-   `picks.json`, `holdings.json` (always empty -- no brokerage integration),
-   `performance.json`, `flow_alerts.json`, and `meta.json` into
-   `frontend/public/data/`.
+   `picks.json` (the optimizer's shortlist), `rankings.json` (every fetched
+   ticker, scored or not), `holdings.json` (always empty -- no brokerage
+   integration; your own portfolio lives in your browser instead), `performance.json`,
+   `flow_alerts.json`, and `meta.json` into `frontend/public/data/`.
 2. Builds `frontend/` with `next build`, `NEXT_PUBLIC_DATA_MODE=static`
    (routes every `lib/api.ts` call to those JSON files instead of a live API)
    and `NEXT_PUBLIC_BASE_PATH=/PM-Project` (GitHub Pages project sites are
@@ -78,6 +88,43 @@ persist), set `NEXT_PUBLIC_DATA_MODE=api` and `NEXT_PUBLIC_API_BASE_URL` to
 your hosted FastAPI URL in the workflow's `env:` block -- see "What's real
 vs. what's a v1 foundation" below for what hosting that requires.
 
+## Personal portfolio tracking
+
+The Portfolio Health page lets you enter your own cash balance, trading fee
+(default 0.1% per side), and holdings (ticker, buy price, quantity) --
+`frontend/lib/portfolio.ts` / `usePortfolio.ts`. This is deliberately **client-side
+only**: it's saved to your browser's `localStorage`, not sent anywhere, because
+there is no backend behind the deployed site to send it to. That means it's
+private to whichever browser/device you entered it on, and is lost if you
+clear site data -- a real trade-off, not a hidden one.
+
+Market value and unrealized P&L (both gross and net of your round-trip fee)
+are computed against `rankings.json`'s `last_price` for any held ticker in
+the tracked ~60-name universe; a ticker outside that universe falls back to
+your buy price with an "n/a" marker rather than pretending to have live data
+for it. Each time you visit the page, today's computed NAV is upserted into a
+second `localStorage` series (`recordNavHistoryPoint`), building your own
+real equity curve over time -- Sharpe and max drawdown on that curve are
+computed client-side and only shown once there's enough history (5+ points)
+to be more than noise. Until you enter any cash or holdings, the page falls
+back to showing the backtested optimizer-shortlist curve instead.
+
+## Daily Discovery: full rankings table
+
+Rather than a shortlist of cards, Daily Discovery shows every fetched ticker
+in one sortable table (`components/discovery/RankingsTable.tsx`) -- composite
+score, percentile, all 5 factor values, last price, day change, relative
+volume, and volume z-score, click any column to sort. Disqualified or
+insufficiently-scored rows are included (faded, not hidden) rather than
+silently dropped, and a ★ marks names in that day's optimizer shortlist
+(shown separately above the table with its rationale and basket-level
+backtest stats, since those are portfolio-level numbers a per-row table can't
+represent). Sorting a ranking table where null scores should always sort
+last, independent of ascending/descending, is easy to get backwards -- an
+earlier version of the sort comparator did exactly that (multiplying the
+null-handling branch by the direction flag inverted it under descending
+sort); verified live and fixed.
+
 ## What's real vs. what's a v1 foundation
 
 This was built and verified in one pass, but is honestly a **v1 foundation**,
@@ -88,12 +135,14 @@ not a deployed production system. Specifically:
   OHLCV history for VNM, the full 723-ticker HOSE universe, a live price board
   (ref/ceiling/floor + foreign buy/sell value), and value/quality ratios
   (P/E, P/B, EV/EBITDA, ROCE, interest coverage, CFO/Assets) for VNM, VIC, and
-  ACB, and a real screening + out-of-sample backtest run for the GitHub Pages
-  snapshot (see below). All 33 backend unit tests pass. The FastAPI app
-  imports cleanly and its
-  OpenAPI schema generates. The Next.js frontend builds cleanly under strict
-  TypeScript and was verified in a browser (correct theme, fonts, routing, and
-  graceful empty/error states with no backend attached).
+  ACB, and a real ~60-ticker screening + out-of-sample backtest run for the
+  GitHub Pages snapshot (see below). All 37 backend unit tests pass. The
+  FastAPI app imports cleanly and its OpenAPI schema generates. The Next.js
+  frontend builds cleanly under strict TypeScript and was verified in a
+  browser -- theme/fonts/routing, the rankings table's sort correctness, the
+  portfolio editor's add/remove/persist-across-reload behavior with no
+  hydration-mismatch errors, and graceful empty/error states with no backend
+  attached.
 - **Found and fixed a real upstream bug**: `Finance.ratio()` on vnstock's
   default `VCI` source returns stale, mislabeled period columns (every quarter
   came back headed "2018" regardless of what was requested) -- verified live,
@@ -101,6 +150,11 @@ not a deployed production system. Specifically:
   source instead, which returns correct, current-quarter data with stable
   English `item_id` keys. Run `python -m scripts.ingest_fundamentals` to
   populate `fundamentals_quarterly` for registered assets.
+- **Found and fixed a units bug**: `Quote.history()`'s `close` price is in
+  **thousands** of VND (verified live: VNM's close came back as ~62-64, a
+  real price of ~62,000-64,000 VND) -- `rankings.json`'s `last_price` and
+  the portfolio's market-value math both convert to whole VND explicitly
+  rather than silently being 1000x off wherever a price gets used as money.
 - **Not verified end-to-end**: nothing here has run against a live Postgres/
   TimescaleDB instance (no Docker available in the build environment). The
   `db/schema.sql` DDL and SQLAlchemy models were hand-reviewed for correctness
@@ -156,7 +210,7 @@ cd backend
 python -m venv .venv && source .venv/Scripts/activate   # or .venv/bin/activate on macOS/Linux
 pip install -r requirements.txt
 cp .env.example .env   # adjust DATABASE_URL if not using the default docker-compose creds
-python -m pytest       # 26 tests, no DB required
+python -m pytest       # 37 tests, no DB required
 uvicorn app.main:app --reload
 ```
 Then, once the DB is up and `assets` has rows (see below):

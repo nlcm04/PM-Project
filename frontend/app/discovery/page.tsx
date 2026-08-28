@@ -1,34 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PickCard } from "@/components/discovery/PickCard";
+import { RankingsTable } from "@/components/discovery/RankingsTable";
+import { ShortlistSummary } from "@/components/discovery/ShortlistSummary";
 import { FlowAlertPanel } from "@/components/discovery/FlowAlertPanel";
 import { SnapshotMetaBanner } from "@/components/ui/SnapshotMetaBanner";
-import { getFlowAlerts, getPicks, type DailyStockPick, type FlowAlert } from "@/lib/api";
+import { getFlowAlerts, getPicks, getRankings, type DailyStockPick, type FlowAlert, type RankedStock } from "@/lib/api";
 
 export default function DiscoveryPage() {
-  const [picks, setPicks] = useState<DailyStockPick[] | null>(null);
+  const [rankings, setRankings] = useState<RankedStock[] | null>(null);
+  const [picks, setPicks] = useState<DailyStockPick[]>([]);
   const [flowAlerts, setFlowAlerts] = useState<FlowAlert[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getPicks("PENDING"), getFlowAlerts()])
-      .then(([p, alerts]) => {
+    Promise.all([getRankings(), getPicks(), getFlowAlerts()])
+      .then(([r, p, alerts]) => {
+        setRankings(r);
         setPicks(p);
         setFlowAlerts(alerts);
       })
       .catch((e) => setError(String(e)));
   }, []);
 
-  const flowByTicker = new Map(flowAlerts.map((a) => [a.ticker, a]));
+  const pickTickers = new Set(picks.map((p) => p.ticker));
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-7xl">
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-cream">Daily Discovery</h1>
         <p className="mt-1 text-sm text-cream/60">
-          Today&rsquo;s screened candidates, awaiting your manual approval. Nothing here is ever
-          auto-invested.
+          Every tracked HOSE ticker, ranked best to worst across value, quality, and volume signals.
+          Nothing here is ever auto-invested &mdash; add positions yourself on the Portfolio page.
         </p>
       </header>
 
@@ -44,20 +47,13 @@ export default function DiscoveryPage() {
         <FlowAlertPanel alerts={flowAlerts} />
       </div>
 
-      <div className="space-y-4">
-        {picks === null && !error && <p className="text-cream/50">Loading today&rsquo;s picks&hellip;</p>}
-        {picks?.length === 0 && (
-          <p className="text-cream/50">No pending picks right now &mdash; check back after the next screening run.</p>
-        )}
-        {picks?.map((pick) => (
-          <PickCard
-            key={pick.id}
-            pick={pick}
-            flowAlert={flowByTicker.get(pick.ticker)}
-            onDecided={(updated) => setPicks((prev) => prev?.map((p) => (p.id === updated.id ? updated : p)) ?? null)}
-          />
-        ))}
-      </div>
+      <ShortlistSummary picks={picks} />
+
+      {rankings === null && !error ? (
+        <p className="text-cream/50">Loading rankings&hellip;</p>
+      ) : (
+        <RankingsTable rows={rankings ?? []} pickTickers={pickTickers} />
+      )}
     </div>
   );
 }

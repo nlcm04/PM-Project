@@ -2,7 +2,7 @@
 // This is fixture data for showing the UI -- it does not come from a real
 // screening run, a real backtest, or a real brokerage. See README.md.
 
-import type { DailyStockPick, FlowAlert, Holding, PerformanceSnapshot } from "./api";
+import type { DailyStockPick, FlowAlert, Holding, PerformanceSnapshot, RankedStock } from "./api";
 
 export const SAMPLE_PICKS: DailyStockPick[] = [
   {
@@ -173,3 +173,66 @@ function buildSamplePerformanceHistory(): PerformanceSnapshot[] {
 }
 
 export const SAMPLE_PERFORMANCE: PerformanceSnapshot[] = buildSamplePerformanceHistory();
+
+export const SAMPLE_RANKINGS: RankedStock[] = [
+  {
+    ticker: "FPT",
+    sector: "Technology",
+    disqualified: false,
+    disqualification_reasons: [],
+    composite_score: 1.42,
+    percentile_rank: 97,
+    factors_used_count: 5,
+    earnings_yield: 0.069,
+    book_to_market: 0.3,
+    ev_to_ebitda: 12.4,
+    roic: 18.2,
+    cfo_to_assets: 0.09,
+    interest_coverage: 14.2,
+    last_price: 128_000,
+    price_change_pct: 0.028,
+    relative_volume: 4.3,
+    volume_zscore: 3.1,
+    flow_direction: "ACCUMULATION",
+  },
+  {
+    ticker: "ACB",
+    sector: "Financials",
+    disqualified: false,
+    disqualification_reasons: [],
+    composite_score: 0.84,
+    percentile_rank: 89,
+    factors_used_count: 2,
+    earnings_yield: 0.146,
+    book_to_market: 0.699,
+    ev_to_ebitda: null,
+    roic: null,
+    cfo_to_assets: null,
+    interest_coverage: null,
+    last_price: 22_450,
+    price_change_pct: -0.007,
+    relative_volume: 0.9,
+    volume_zscore: -0.2,
+    flow_direction: "NEUTRAL",
+  },
+  {
+    ticker: "NVL",
+    sector: "Real Estate",
+    disqualified: true,
+    disqualification_reasons: ["pre-tax interest coverage below 3.0x"],
+    composite_score: null,
+    percentile_rank: null,
+    factors_used_count: 4,
+    earnings_yield: 0.01,
+    book_to_market: 0.9,
+    ev_to_ebitda: 22.1,
+    roic: 1.1,
+    cfo_to_assets: -0.03,
+    interest_coverage: 1.2,
+    last_price: 15_200,
+    price_change_pct: -0.019,
+    relative_volume: 3.6,
+    volume_zscore: 2.8,
+    flow_direction: "DISTRIBUTION",
+  },
+];

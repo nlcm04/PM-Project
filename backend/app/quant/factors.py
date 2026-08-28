@@ -36,7 +36,10 @@ def interest_coverage(ebit: float, interest_expense: float) -> float:
 def zscore(series: pd.Series) -> pd.Series:
     std = series.std(ddof=0)
     if std == 0 or np.isnan(std):
-        return pd.Series(0.0, index=series.index)
+        # Preserve the original NaN mask -- a naive `pd.Series(0.0, ...)` here would
+        # silently turn a missing value (e.g. a bank lacking EV/EBITDA) into a fake
+        # "average" 0.0 z-score instead of propagating the missingness.
+        return pd.Series(0.0, index=series.index).mask(series.isna())
     return (series - series.mean()) / std
 
 

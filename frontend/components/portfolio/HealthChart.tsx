@@ -2,9 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import { createChart, ColorType, type IChartApi } from "lightweight-charts";
-import type { PerformanceSnapshot } from "@/lib/api";
 
-export function HealthChart({ snapshots }: { snapshots: PerformanceSnapshot[] }) {
+interface NavPoint {
+  snapshot_date: string;
+  nav: number;
+}
+
+export function HealthChart({ snapshots }: { snapshots: NavPoint[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 

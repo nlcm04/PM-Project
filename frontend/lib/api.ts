@@ -74,11 +74,33 @@ export interface StaticSnapshotMeta {
   universe: string[];
   universe_size: number;
   fetched_count: number;
-  screened_count: number;
-  excluded_missing_fundamentals: string[];
+  scoreable_count: number;
+  disqualified_count: number;
+  vif_dropped_factors: string[];
   in_sample_days: number;
   out_of_sample_days: number;
   note: string;
+}
+
+export interface RankedStock {
+  ticker: string;
+  sector: string;
+  disqualified: boolean;
+  disqualification_reasons: string[];
+  composite_score: number | null;
+  percentile_rank: number | null;
+  factors_used_count: number;
+  earnings_yield: number | null;
+  book_to_market: number | null;
+  ev_to_ebitda: number | null;
+  roic: number | null;
+  cfo_to_assets: number | null;
+  interest_coverage: number | null;
+  last_price: number | null;
+  price_change_pct: number | null;
+  relative_volume: number | null;
+  volume_zscore: number | null;
+  flow_direction: "ACCUMULATION" | "DISTRIBUTION" | "NEUTRAL" | null;
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -194,4 +216,17 @@ export const getFlowAlerts = async (days = 7, onlyAnomalous = true): Promise<Flo
 export const getSnapshotMeta = async (): Promise<StaticSnapshotMeta | null> => {
   if (DATA_MODE !== "static") return null;
   return fetchStaticJson<StaticSnapshotMeta>("meta.json");
+};
+
+// NOTE: no live-DB-backed FastAPI implementation of this endpoint exists yet
+// (see README "What's real vs. what's a v1 foundation") -- the per-ticker
+// rankings table is currently only produced by the static snapshot path.
+// Calling this in "api" mode will 404 until that's built.
+export const getRankings = async (): Promise<RankedStock[]> => {
+  if (DATA_MODE === "static") return fetchStaticJson<RankedStock[]>("rankings.json");
+  if (DATA_MODE === "demo") {
+    const { SAMPLE_RANKINGS } = await loadDemoData();
+    return SAMPLE_RANKINGS;
+  }
+  return apiFetch<RankedStock[]>("/api/rankings");
 };
