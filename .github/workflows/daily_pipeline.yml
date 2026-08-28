@@ -34,6 +34,9 @@ jobs:
       - name: Ingest latest market data
         run: python -m scripts.ingest_market_data
 
+      - name: Ingest latest fundamentals
+        run: python -m scripts.ingest_fundamentals
+
       - name: Detect institutional order-flow anomalies
         run: python -m scripts.detect_flow_alerts
 

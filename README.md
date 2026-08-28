@@ -13,12 +13,20 @@ not a deployed production system. Specifically:
 
 - **Verified working, live**: the `vnstock` data layer (`app/data/vnstock_client.py`)
   was smoke-tested against real HOSE data during development -- fetched real
-  OHLCV history for VNM, the full 723-ticker HOSE universe, and a live price
-  board (ref/ceiling/floor + foreign buy/sell value). All 26 backend unit tests
-  pass (quant modules, tested against synthetic data). The FastAPI app imports
-  cleanly and its OpenAPI schema generates. The Next.js frontend builds cleanly
-  under strict TypeScript and was verified in a browser (correct theme, fonts,
-  routing, and graceful empty/error states with no backend attached).
+  OHLCV history for VNM, the full 723-ticker HOSE universe, a live price board
+  (ref/ceiling/floor + foreign buy/sell value), and value/quality ratios
+  (P/E, P/B, EV/EBITDA, ROCE, interest coverage, CFO/Assets) for VNM, VIC, and
+  ACB. All 30 backend unit tests pass. The FastAPI app imports cleanly and its
+  OpenAPI schema generates. The Next.js frontend builds cleanly under strict
+  TypeScript and was verified in a browser (correct theme, fonts, routing, and
+  graceful empty/error states with no backend attached).
+- **Found and fixed a real upstream bug**: `Finance.ratio()` on vnstock's
+  default `VCI` source returns stale, mislabeled period columns (every quarter
+  came back headed "2018" regardless of what was requested) -- verified live,
+  not assumed. `get_fundamentals`/`get_raw_ratio_table` now hard-code the `KBS`
+  source instead, which returns correct, current-quarter data with stable
+  English `item_id` keys. Run `python -m scripts.ingest_fundamentals` to
+  populate `fundamentals_quarterly` for registered assets.
 - **Not verified end-to-end**: nothing here has run against a live Postgres/
   TimescaleDB instance (no Docker available in the build environment). The
   `db/schema.sql` DDL and SQLAlchemy models were hand-reviewed for correctness
@@ -30,6 +38,13 @@ not a deployed production system. Specifically:
   (e.g. from HOSE's own disclosure portal). `screen_universe()` fails closed
   (treats unset governance fields as disqualifying) rather than assuming a
   stock is clean.
+- **Data-quality caveat, unresolved**: `cfo_to_assets` came back as exactly
+  `0.0` for the latest quarter for both VNM and VIC, while an earlier quarter
+  for the same metric was a real non-zero number -- likely "not yet reported
+  for this interim period" rather than a true zero, but that's inferred, not
+  confirmed against vnstock's own documentation. A 0.0 here could wrongly
+  fail the spec's `CFO/Assets > 0` governance check for a healthy company;
+  worth a manual sanity check before trusting it in production.
 - **Backtest honesty**: the spec asks the backtest to prove "no alternative
   subset out-risk-adjusts the picks." A true proof requires exhaustively
   searching every subset of the HOSE universe, which is combinatorially
@@ -73,6 +88,7 @@ uvicorn app.main:app --reload
 Then, once the DB is up and `assets` has rows (see below):
 ```bash
 python -m scripts.ingest_market_data     # pulls OHLCV via vnstock
+python -m scripts.ingest_fundamentals    # pulls value/quality ratios via vnstock
 python -m scripts.detect_flow_alerts     # institutional order-flow scan
 python -m scripts.run_daily_pipeline     # writes today's PENDING picks
 ```
