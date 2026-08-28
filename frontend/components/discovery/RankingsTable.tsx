@@ -16,6 +16,8 @@ type SortKey =
   | "roic"
   | "cfo_to_assets"
   | "interest_coverage"
+  | "momentum"
+  | "foreign_flow_5d"
   | "last_price"
   | "price_change_pct"
   | "relative_volume"
@@ -25,6 +27,19 @@ const fmtPctFraction = (v: number | null) => (v == null ? "—" : `${(v * 100).t
 const fmtPctAlready = (v: number | null) => (v == null ? "—" : `${v.toFixed(1)}%`);
 const fmtRatio = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)}x`);
 const fmtVnd = (v: number | null) => (v == null ? "—" : v.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+
+/** Foreign-flow values are net VND traded by foreign investors, often in the
+ * billions -- a compact "+12.5B" reads far better in a table cell than the
+ * full number.
+ */
+const fmtCompactVnd = (v: number | null) => {
+  if (v == null) return "—";
+  const sign = v >= 0 ? "+" : "-";
+  const abs = Math.abs(v);
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(0)}M`;
+  return `${sign}${abs.toFixed(0)}`;
+};
 
 interface Column {
   key: SortKey;
@@ -44,6 +59,8 @@ const COLUMNS: Column[] = [
   { key: "roic", label: "ROIC", format: (r) => fmtPctAlready(r.roic), align: "right" },
   { key: "cfo_to_assets", label: "CFO/Assets", format: (r) => fmtPctFraction(r.cfo_to_assets), align: "right" },
   { key: "interest_coverage", label: "Int. Cov.", format: (r) => fmtRatio(r.interest_coverage), align: "right" },
+  { key: "momentum", label: "Mom. 12-1", format: (r) => fmtPctFraction(r.momentum), align: "right" },
+  { key: "foreign_flow_5d", label: "Foreign 5d", format: (r) => fmtCompactVnd(r.foreign_flow_5d), align: "right" },
   { key: "last_price", label: "Price (₫)", format: (r) => fmtVnd(r.last_price), align: "right" },
   { key: "price_change_pct", label: "Chg", format: (r) => fmtPctFraction(r.price_change_pct), align: "right" },
   { key: "relative_volume", label: "Rel.Vol", format: (r) => (r.relative_volume != null ? `${r.relative_volume.toFixed(1)}x` : "—"), align: "right" },
@@ -144,6 +161,8 @@ export function RankingsTable({ rows, pickTickers }: { rows: RankedStock[]; pick
                       {row.price_change_pct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                       {col.format(row)}
                     </span>
+                  ) : col.key === "foreign_flow_5d" && row.foreign_flow_5d != null ? (
+                    <span className={row.foreign_flow_5d >= 0 ? "text-emerald-400" : "text-red-400"}>{col.format(row)}</span>
                   ) : (
                     col.format(row)
                   )}

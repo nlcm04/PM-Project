@@ -77,8 +77,9 @@ export interface StaticSnapshotMeta {
   scoreable_count: number;
   disqualified_count: number;
   vif_dropped_factors: string[];
-  in_sample_days: number;
-  out_of_sample_days: number;
+  factors: string[];
+  walk_forward_folds: number | null;
+  foreign_flow_history_days: number;
   note: string;
 }
 
@@ -96,6 +97,9 @@ export interface RankedStock {
   roic: number | null;
   cfo_to_assets: number | null;
   interest_coverage: number | null;
+  momentum: number | null;
+  foreign_flow_5d: number | null;
+  foreign_net_value_today: number | null;
   last_price: number | null;
   price_change_pct: number | null;
   relative_volume: number | null;

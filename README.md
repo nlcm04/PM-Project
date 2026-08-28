@@ -22,8 +22,52 @@ a pick doesn't persist anywhere (no server to persist it to), but your own
 and saved to your browser's localStorage -- see "Personal portfolio tracking"
 below.
 
-Deliberate scope limits of this snapshot, surfaced on the site itself (and in
-`frontend/public/data/meta.json`), not hidden:
+### The scoring model: 7 factors, sector-neutral
+
+`composite_score` blends 7 cross-sectional factors, equal-weighted after
+z-scoring: `earnings_yield`, `book_to_market`, `ev_to_ebitda`, `roic`,
+`cfo_to_assets` (value/quality, from fundamentals), `momentum` (12-1 month
+price momentum -- one of the best-replicated factors in equity markets,
+emerging markets included, paired here with value rather than left out), and
+`foreign_flow_5d` (rolling foreign net-buy value -- one of the most-watched
+signals in the Vietnamese market specifically). Z-scoring is **sector-neutral**
+(`app/quant/factors.py::sector_neutral_composite_score`): a bank's ratios are
+compared to other financials, not to real estate or industrials, since
+valuation multiples aren't comparable across sectors and pooling them biases
+the ranking toward whichever sector happens to be cheap right now. Sectors
+with fewer than 4 members fall back to the global z-score, since a 2-name
+sector's within-group z-scores are just ±1 and not statistically meaningful.
+
+### Backtest: walk-forward across multiple historical folds
+
+`app/quant/backtest.py::walk_forward_evaluate` re-derives the optimizer's
+weights at each of several historical folds using an **expanding window of
+only the data before that fold**, evaluates on the fold, and concatenates all
+folds into one continuous multi-regime equity curve -- not a single static
+70/30 split, which only tells you about one period. Today's live
+recommendation still uses ALL available history (most current information);
+the walk-forward folds exist purely to test whether the weight-derivation
+methodology holds up across different historical stretches. Honest limit:
+`score_z` (which stocks are attractive) is held fixed at today's value, not
+re-derived at each historical fold -- a fully rigorous walk-forward would
+also re-score stocks using point-in-time historical fundamentals (vnstock's
+`Finance.ratio()` does return multiple historical quarters, so this is
+possible in principle, just not implemented here).
+
+### Foreign flow: a persisted snapshot, not a real historical series
+
+vnstock has no verified historical foreign-flow endpoint -- checked live,
+`Trading.history()` isn't actually implemented for either data source despite
+appearing in the class's method list. `foreign_flow_5d` is built by taking a
+live snapshot each run and **persisting it across runs into
+`data/foreign_flow_history.json`, committed back to the repo by CI** (GitHub
+Actions runners are ephemeral; the git repo itself is the only persistence
+available). The factor starts thin (one data point) and improves day by day
+as history accumulates -- `meta.json`'s `foreign_flow_history_days` shows how
+much has built up so far.
+
+Other deliberate scope limits of this snapshot, surfaced on the site itself
+(and in `frontend/public/data/meta.json`), not hidden:
 - **~60-name curated universe, not the full ~723 HOSE tickers.** Two reasons:
   vnstock's free-tier rate limiter was observed live to kill the whole Python
   process (`SystemExit`, not a catchable exception) after roughly 10 tickers
@@ -32,11 +76,13 @@ Deliberate scope limits of this snapshot, surfaced on the site itself (and in
   tickers per run against a free, scraping-based API on every CI run isn't a
   considerate load either way. `build_static_snapshot.py` paces requests at
   3.5s apart and stops early rather than crash if it still gets rate-limited.
-- **Financials (banks, brokers) are included**, scored from whichever of the
-  5 value/quality factors actually apply to their accounting -- a live pull
-  showed ACB (a bank) returning `None` for ROIC/EV-EBITDA/CFO-based ratios,
-  so a bank typically scores off just earnings_yield/book_to_market (2 of 5,
-  disclosed per-row as `factors_used_count`). An earlier version of this
+  Each run now makes 3 calls per ticker (OHLCV, fundamentals, foreign-flow
+  snapshot), so a full run takes ~15-18 minutes.
+- **Financials (banks, brokers) are included**, scored from whichever
+  factors actually apply to their accounting -- a live pull showed ACB (a
+  bank) returning `None` for ROIC/EV-EBITDA/CFO-based ratios, so a bank
+  typically scores off just earnings_yield/book_to_market/momentum/foreign_flow
+  (disclosed per-row as `factors_used_count`). An earlier version of this
   screen also disqualified every bank outright, treating "no interest
   coverage data" the same as "fails the 3x interest-coverage check" --
   verified live and fixed; missing now means "not evaluated," not "failed."
@@ -44,12 +90,6 @@ Deliberate scope limits of this snapshot, surfaced on the site itself (and in
   expose auditor opinion, filing status, or the HOSE warning list (see
   `app/data/vnstock_client.py`), so this list is "hand-picked large/mid
   caps", not "governance-screened".
-- **Out-of-sample backtest, on purpose**: expected returns, the covariance
-  matrix, and portfolio weights (for the small top-N optimizer shortlist) are
-  computed on the first ~70% of the lookback window; Sharpe, drawdown, the
-  equity curve, and the vs-random-baskets comparison are evaluated on the
-  last ~30%, which weight-selection never sees. Computing both halves on the
-  same window would inflate the numbers.
 - Only shortlisted names the optimizer actually allocates a real weight to
   are shown in "Today's Optimizer Shortlist" -- a name weighted at ~0% (this
   happens; verified live) is dropped rather than shown as an actionable
@@ -64,12 +104,15 @@ and on manual dispatch):
    ticker, scored or not), `holdings.json` (always empty -- no brokerage
    integration; your own portfolio lives in your browser instead), `performance.json`,
    `flow_alerts.json`, and `meta.json` into `frontend/public/data/`.
-2. Builds `frontend/` with `next build`, `NEXT_PUBLIC_DATA_MODE=static`
+2. Commits `data/foreign_flow_history.json` back to the repo if it changed
+   (see "Foreign flow" above) -- best-effort, `continue-on-error: true`, so a
+   rare push conflict doesn't block the site deploy itself.
+3. Builds `frontend/` with `next build`, `NEXT_PUBLIC_DATA_MODE=static`
    (routes every `lib/api.ts` call to those JSON files instead of a live API)
    and `NEXT_PUBLIC_BASE_PATH=/PM-Project` (GitHub Pages project sites are
    served under `/<repo-name>/`, not `/`), set in `next.config.mjs`, which
    also sets `output: "export"` for plain static HTML/CSS/JS.
-3. Publishes `frontend/out/` via `actions/upload-pages-artifact` +
+4. Publishes `frontend/out/` via `actions/upload-pages-artifact` +
    `actions/deploy-pages`.
 
 There's also a third mode, `NEXT_PUBLIC_DATA_MODE=demo`, using
@@ -135,9 +178,11 @@ not a deployed production system. Specifically:
   OHLCV history for VNM, the full 723-ticker HOSE universe, a live price board
   (ref/ceiling/floor + foreign buy/sell value), and value/quality ratios
   (P/E, P/B, EV/EBITDA, ROCE, interest coverage, CFO/Assets) for VNM, VIC, and
-  ACB, and a real ~60-ticker screening + out-of-sample backtest run for the
-  GitHub Pages snapshot (see below). All 37 backend unit tests pass. The
-  FastAPI app imports cleanly and its OpenAPI schema generates. The Next.js
+  ACB, and a real ~60-ticker sector-neutral screening + walk-forward backtest
+  run for the GitHub Pages snapshot (see below), including a live foreign-flow
+  snapshot for all 61 tickers persisted into `data/foreign_flow_history.json`.
+  All 64 backend unit tests pass. The FastAPI app imports cleanly and its
+  OpenAPI schema generates. The Next.js
   frontend builds cleanly under strict TypeScript and was verified in a
   browser -- theme/fonts/routing, the rankings table's sort correctness, the
   portfolio editor's add/remove/persist-across-reload behavior with no
@@ -155,6 +200,24 @@ not a deployed production system. Specifically:
   real price of ~62,000-64,000 VND) -- `rankings.json`'s `last_price` and
   the portfolio's market-value math both convert to whole VND explicitly
   rather than silently being 1000x off wherever a price gets used as money.
+- **Found and fixed a drawdown bug**: a per-day "max_drawdown" field
+  computed as `nav / running_peak - 1` only ever showed that DAY's
+  drawdown-from-peak, not the worst drawdown seen up to that point -- so on
+  any day the price had partly recovered, the stat understated real risk.
+  Verified live: a walk-forward run's last day showed "-4.5% max drawdown"
+  while the actual worst point in the same run was -19.2%. Compounding that,
+  the very first period's drawdown was ALWAYS trivially 0 regardless of how
+  bad that period's return was, because `cummax()` at the first element is
+  just that element -- there's no prior peak yet unless the starting capital
+  is explicitly included as a reference point. Both fixed in
+  `app/quant/backtest.py::drawdown_series`/`max_drawdown`, used everywhere a
+  drawdown number is computed.
+- **Found and fixed a VIF crash on an all-missing-factor universe**: an
+  all-banks screen (every row missing `ev_to_ebitda`/`roic`/`cfo_to_assets`)
+  made `prune_by_vif`'s internal `.dropna()` empty out entirely and crash
+  with a `LinAlgError` instead of falling back to scoring with whatever
+  factors are actually available. `app/quant/screener.py` now has the same
+  minimum-complete-rows guard as the static snapshot script.
 - **Not verified end-to-end**: nothing here has run against a live Postgres/
   TimescaleDB instance (no Docker available in the build environment). The
   `db/schema.sql` DDL and SQLAlchemy models were hand-reviewed for correctness
@@ -163,9 +226,18 @@ not a deployed production system. Specifically:
 - **Known data gap**: vnstock does not expose auditor opinion, on-time filing
   status, or HOSE warning/special-control-list membership -- the governance
   fields in `fundamentals_quarterly` need a separate, manually-curated feed
-  (e.g. from HOSE's own disclosure portal). `screen_universe()` fails closed
-  (treats unset governance fields as disqualifying) rather than assuming a
-  stock is clean.
+  (e.g. from HOSE's own disclosure portal). `screen_universe()` still fails
+  closed on those specific fields (treats them as disqualifying if unset),
+  but a missing `interest_coverage` no longer does -- see the interest-
+  coverage fix above.
+- **`app/quant/screener.py` (the DB-backed path) does NOT yet have the
+  momentum, foreign-flow, or walk-forward fixes** that the GitHub Pages
+  static snapshot has -- it does have the sector-neutral scoring and
+  missing-interest-coverage fixes, since those needed no schema changes.
+  Adding momentum/foreign-flow there would need real schema additions (a
+  persisted foreign-flow history table, a returns-fetch step) that can't be
+  verified without a live database anyway -- documented as an open gap in
+  the module's own docstring rather than half-implemented.
 - **Data-quality caveat, unresolved**: `cfo_to_assets` came back as exactly
   `0.0` for the latest quarter for both VNM and VIC, while an earlier quarter
   for the same metric was a real non-zero number -- likely "not yet reported
@@ -210,7 +282,7 @@ cd backend
 python -m venv .venv && source .venv/Scripts/activate   # or .venv/bin/activate on macOS/Linux
 pip install -r requirements.txt
 cp .env.example .env   # adjust DATABASE_URL if not using the default docker-compose creds
-python -m pytest       # 37 tests, no DB required
+python -m pytest       # 52 tests, no DB required
 uvicorn app.main:app --reload
 ```
 Then, once the DB is up and `assets` has rows (see below):
@@ -251,12 +323,22 @@ OHLCV/foreign-flow data via vnstock -- there is no non-public order-book access.
 
 - **Cheapness/quality filters**: E/P, B/M, EV/EBITDA, ROIC, CFO/Assets,
   interest coverage (`app/quant/factors.py`)
+- **Momentum** (12-1 month, skipping the most recent month to avoid
+  short-term reversal) and **foreign-flow** (rolling foreign net-buy,
+  persisted across CI runs) as two additional cross-sectional factors,
+  paired with value/quality rather than screened separately
+  (`app/quant/factors.py::momentum_12_1`, `scripts/build_static_snapshot.py`)
+- **Sector-neutral scoring**: factors are z-scored within each sector, not
+  pooled across the whole universe (`app/quant/factors.py::sector_neutral_composite_score`)
 - **No-scandal governance gate**: instant disqualification, no partial credit
   (`app/quant/governance.py`)
 - **Grinold Rule + Fundamental Law of Active Management**: `app/quant/grinold.py`
 - **Econometric diagnostics** (ADF, Breusch-Pagan, Breusch-Godfrey, VIF pruning):
   `app/quant/diagnostics.py`, run automatically each screening cycle
 - **Long-only, lot-constrained, max-Sharpe optimizer**: `app/quant/optimizer.py`
+- **Walk-forward backtest** across multiple historical folds (expanding
+  window, folds concatenated into one multi-regime curve), not a single
+  static split: `app/quant/backtest.py::walk_forward_evaluate`
 - **HOSE microstructure**: 100-share lots, ±7% price bands, T+2/T+1.5
   settlement bucketing (`app/quant/microstructure.py`)
 - **Strict, low-churn sell rules** (2-consecutive-quarter percentile

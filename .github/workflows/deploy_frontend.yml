@@ -9,9 +9,19 @@ name: Deploy Real-Data Demo to GitHub Pages
 # hourly during HOSE trading hours so the public site's volume-anomaly
 # detection stays reasonably current. This is the closest a static site can
 # get to "real-time" -- GitHub's scheduler isn't guaranteed to fire exactly
-# on the minute, and each run still takes ~10-15 min end to end. See
-# README.md "Live demo on GitHub Pages" for the one-time repo setting this
-# depends on.
+# on the minute, and each run takes ~15-18 min end to end. See README.md
+# "Live demo on GitHub Pages" for the one-time repo setting this depends on.
+#
+# IMPORTANT: vnstock has no verified historical foreign-flow endpoint (see
+# scripts/build_static_snapshot.py), so the foreign_flow_5d factor is built
+# by persisting each run's live snapshot into data/foreign_flow_history.json
+# and COMMITTING IT BACK to the repo (the "Persist foreign-flow history"
+# step below) -- GitHub Actions runners are ephemeral, so the git repo
+# itself is the only persistence available across hourly runs. That commit
+# only touches data/foreign_flow_history.json, which is deliberately outside
+# this workflow's `push.paths` filter above, so it doesn't retrigger this
+# same workflow; the commit message also carries [skip ci] as a second,
+# repo-wide safety net against any other push-triggered workflow.
 on:
   push:
     branches: [main]
@@ -24,7 +34,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write # needed to commit data/foreign_flow_history.json back to the repo
   pages: write
   id-token: write
 
@@ -51,6 +61,22 @@ jobs:
       - name: Generate real-data snapshot from live vnstock data
         working-directory: backend
         run: python -m scripts.build_static_snapshot --out ../frontend/public/data
+
+      - name: Persist foreign-flow history
+        # Best-effort: a rare push conflict here shouldn't block the site
+        # deploy itself -- the history just doesn't gain a data point this
+        # run and self-heals on the next one.
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/foreign_flow_history.json
+          if git diff --cached --quiet; then
+            echo "No change to foreign-flow history, skipping commit."
+          else
+            git commit -m "Update foreign-flow history [skip ci]"
+            git push
+          fi
 
       - uses: actions/setup-node@v4
         with:

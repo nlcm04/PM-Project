@@ -43,10 +43,13 @@ export function SnapshotMetaBanner() {
         {now != null && ` (${minutesAgoLabel(meta.generated_at, now)})`}.
       </span>{" "}
       {meta.scoreable_count} of {meta.fetched_count} curated tickers scored ({meta.disqualified_count}{" "}
-      disqualified, mostly on the interest-coverage check) out of a universe of {meta.universe_size}.
-      Backtest for the shortlisted picks is evaluated out-of-sample over the last {meta.out_of_sample_days}{" "}
-      trading days, held out from the {meta.in_sample_days} days used to derive them. Refreshes hourly
-      during HOSE trading hours. {meta.note}
+      disqualified) out of a universe of {meta.universe_size}, sector-neutral across {meta.factors.length}{" "}
+      factors (value, quality, 12-1 month momentum, foreign flow).{" "}
+      {meta.walk_forward_folds != null && (
+        <>Shortlist backtest is walk-forward across {meta.walk_forward_folds} historical folds. </>
+      )}
+      Foreign-flow history: {meta.foreign_flow_history_days} day{meta.foreign_flow_history_days === 1 ? "" : "s"}{" "}
+      accumulated so far. Refreshes hourly during HOSE trading hours. {meta.note}
     </div>
   );
 }

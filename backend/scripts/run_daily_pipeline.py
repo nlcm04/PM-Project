@@ -30,7 +30,7 @@ def load_fundamentals_snapshot(db) -> pd.DataFrame:
     """Join the latest FundamentalsQuarterly row per asset with its Asset-level flags."""
     query = """
         SELECT DISTINCT ON (f.asset_id)
-            f.asset_id, a.warning_status, a.margin_eligible,
+            f.asset_id, a.sector, a.warning_status, a.margin_eligible,
             f.earnings_yield, f.book_to_market, f.ev_to_ebitda,
             f.roic, f.cfo_to_assets, f.interest_coverage,
             f.auditor_opinion, f.filing_on_time

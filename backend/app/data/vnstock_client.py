@@ -134,6 +134,22 @@ def get_reference_price_band(ticker: str) -> dict[str, float]:
     }
 
 
+def get_foreign_net_value(ticker: str) -> float | None:
+    """Today's foreign net buy value (buy - sell) in whole VND, from the live
+    trading board. This is a POINT-IN-TIME snapshot -- vnstock has no verified
+    historical foreign-flow endpoint (checked live: `Trading.history()` isn't
+    actually implemented despite appearing in the class's method list, for
+    either the VCI or KBS source). A time series is built by the caller
+    persisting this snapshot across runs -- see
+    scripts/build_static_snapshot.py's foreign-flow history file.
+    """
+    band = get_reference_price_band(ticker)
+    buy, sell = band.get("foreign_buy_value"), band.get("foreign_sell_value")
+    if buy is None or sell is None:
+        return None
+    return buy - sell
+
+
 def get_raw_ratio_table(ticker: str, period: str = "quarter") -> pd.DataFrame:
     """Raw long-format financial-ratio table (columns: item, item_id, <period columns>),
     pulled from the KBS source -- see `_FUNDAMENTALS_SOURCE` docstring above.

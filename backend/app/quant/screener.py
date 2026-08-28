@@ -27,13 +27,20 @@ HIGHER_IS_BETTER = {
     "cfo_to_assets": True,
     "ev_to_ebitda": False,
 }
+MIN_COMPLETE_ROWS_FOR_VIF = 10  # below this, a VIF-based factor-pruning decision is unreliable
 
 
 def screen_universe(fundamentals_df: pd.DataFrame, settings=None) -> pd.DataFrame:
     """Apply the governance disqualification filter, then compute the composite value/quality score.
 
     `fundamentals_df` is one row per asset with columns matching FundamentalsQuarterly plus
-    `warning_status` and `margin_eligible` joined in from Asset.
+    `sector`, `warning_status`, and `margin_eligible` joined in from Asset.
+
+    Known gap vs. the GitHub Pages static snapshot (backend/scripts/build_static_snapshot.py),
+    which this DB-backed path does NOT yet replicate: momentum and foreign-flow factors (need
+    price-history / a persisted foreign-flow series this path doesn't have wired up), and the
+    walk-forward backtest (build_daily_picks still uses a single-window Sharpe estimate). This
+    path has also never been run against a live database -- see README "What's real".
     """
     settings = settings or get_settings()
 
@@ -45,7 +52,12 @@ def screen_universe(fundamentals_df: pd.DataFrame, settings=None) -> pd.DataFram
             filing_on_time=bool(row["filing_on_time"]),
             warning_status=row["warning_status"],
             margin_eligible=bool(row["margin_eligible"]),
-            min_interest_coverage_ok=row["interest_coverage"] >= settings.min_interest_coverage,
+            # A missing interest_coverage is NOT the same as a failing one -- verified live
+            # (see app.data.vnstock_client / build_static_snapshot.py), KBS simply doesn't
+            # report this ratio for banks. Missing -> not evaluated, not failed.
+            min_interest_coverage_ok=(
+                pd.isna(row["interest_coverage"]) or row["interest_coverage"] >= settings.min_interest_coverage
+            ),
         )
         disq, reasons = governance.is_disqualified(check)
         disqualified_mask.append(disq)
@@ -54,15 +66,31 @@ def screen_universe(fundamentals_df: pd.DataFrame, settings=None) -> pd.DataFram
     df = fundamentals_df.copy()
     df["disqualified"] = disqualified_mask
     df["disqualification_reasons"] = reasons_col
+    if "sector" not in df.columns:
+        df["sector"] = "Other"
+    df["sector"] = df["sector"].fillna("Other")
 
     eligible = df[~df["disqualified"]].copy()
     if eligible.empty:
         return eligible
 
     factor_cols = list(HIGHER_IS_BETTER.keys())
-    pruned_factors, dropped = diagnostics.prune_by_vif(eligible[factor_cols])
-    surviving_weights = {k: v for k, v in HIGHER_IS_BETTER.items() if k in pruned_factors.columns}
-    eligible["composite_score"] = factors.composite_score(eligible, surviving_weights)
+    # VIF needs enough COMPLETE rows to be well-defined -- verified live: an
+    # all-banks universe (missing ev_to_ebitda/roic/cfo_to_assets for every
+    # row) made `.dropna()` inside prune_by_vif empty out entirely and crash
+    # with a LinAlgError, instead of gracefully falling back to using every
+    # factor unpruned.
+    complete = eligible[factor_cols].dropna()
+    if len(complete) >= MIN_COMPLETE_ROWS_FOR_VIF:
+        pruned_factors, dropped = diagnostics.prune_by_vif(complete)
+        surviving_weights = {k: v for k, v in HIGHER_IS_BETTER.items() if k in pruned_factors.columns}
+    else:
+        dropped = []
+        surviving_weights = dict(HIGHER_IS_BETTER)
+    # Sector-neutral: a bank's ratios are compared to other financials, not to real estate or
+    # industrials -- pooling them cross-sector biases the ranking toward whichever sector
+    # happens to be cheap right now (see app.quant.factors.sector_neutral_composite_score).
+    eligible["composite_score"] = factors.sector_neutral_composite_score(eligible, surviving_weights, sector_col="sector")
     eligible["percentile_rank"] = eligible["composite_score"].rank(pct=True) * 100
     eligible["vif_dropped_factors"] = [dropped] * len(eligible)
     return eligible
