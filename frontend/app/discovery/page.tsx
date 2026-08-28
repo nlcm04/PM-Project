@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { RankingsTable } from "@/components/discovery/RankingsTable";
 import { ShortlistSummary } from "@/components/discovery/ShortlistSummary";
 import { FlowAlertPanel } from "@/components/discovery/FlowAlertPanel";
 import { SnapshotMetaBanner } from "@/components/ui/SnapshotMetaBanner";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import { getFlowAlerts, getPicks, getRankings, type DailyStockPick, type FlowAlert, type RankedStock } from "@/lib/api";
 
 export default function DiscoveryPage() {
@@ -13,15 +14,16 @@ export default function DiscoveryPage() {
   const [flowAlerts, setFlowAlerts] = useState<FlowAlert[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useAutoRefresh(() => {
     Promise.all([getRankings(), getPicks(), getFlowAlerts()])
       .then(([r, p, alerts]) => {
         setRankings(r);
         setPicks(p);
         setFlowAlerts(alerts);
+        setError(null);
       })
       .catch((e) => setError(String(e)));
-  }, []);
+  });
 
   const pickTickers = new Set(picks.map((p) => p.ticker));
 

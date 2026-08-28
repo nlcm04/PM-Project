@@ -15,8 +15,14 @@ Rather than fake that with sample data, `backend/scripts/build_static_snapshot.p
 runs the **real** screening + backtest pipeline against **live vnstock data**
 at CI build time (no database involved) and writes the result as static JSON
 that the frontend fetches directly. Every number on the live site came out of
-a real vnstock pull; nothing is fabricated. It refreshes **hourly during HOSE
-trading hours** -- the closest a static site can get to real-time. Approving
+a real vnstock pull; nothing is fabricated. The underlying snapshot refreshes
+**hourly during HOSE trading hours** -- the closest a static site can get to
+real-time. On top of that, an already-open tab **auto-refreshes its own data
+every 5 minutes** (`frontend/lib/useAutoRefresh.ts`) and again immediately
+whenever you switch back to it (via the page visibility API), so you don't
+need to manually reload to see the next hourly snapshot once it's published
+-- it re-fetches the same JSON in place, without a full page reload, so it
+never clobbers whatever you're mid-typing into the portfolio form. Approving
 a pick doesn't persist anywhere (no server to persist it to), but your own
 **portfolio (cash, holdings, trading fee) is editable directly on the site**
 and saved to your browser's localStorage -- see "Personal portfolio tracking"

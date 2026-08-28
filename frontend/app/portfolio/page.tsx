@@ -8,6 +8,7 @@ import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
 import { PortfolioEditor } from "@/components/portfolio/PortfolioEditor";
 import { SnapshotMetaBanner } from "@/components/ui/SnapshotMetaBanner";
 import { usePortfolio } from "@/lib/usePortfolio";
+import { useAutoRefresh } from "@/lib/useAutoRefresh";
 import {
   computeHistoryMaxDrawdown,
   computeHistorySharpe,
@@ -35,15 +36,16 @@ export default function PortfolioPage() {
   const [navHistory, setNavHistory] = useState<NavHistoryPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useAutoRefresh(() => {
     Promise.all([getPerformanceHealth(), getHoldings(), getRankings()])
       .then(([s, h, r]) => {
         setSnapshots(s);
         setHoldings(h);
         setRankings(r);
+        setError(null);
       })
       .catch((e) => setError(String(e)));
-  }, []);
+  });
 
   const priceByTicker = useMemo(() => {
     const map = new Map<string, number>();
