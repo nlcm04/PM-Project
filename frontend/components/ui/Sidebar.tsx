@@ -9,16 +9,23 @@ const NAV_ITEMS = [
   { href: "/portfolio", label: "Portfolio Health", icon: LineChart },
 ];
 
+const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
     <aside className="flex h-screen w-64 flex-col bg-brown-950 border-r border-brown-700/60 px-4 py-6">
-      <div className="mb-8 flex items-center gap-2 px-2">
+      <div className="mb-2 flex items-center gap-2 px-2">
         <LayoutGrid className="h-6 w-6 text-amber-400" />
         <span className="text-lg font-bold tracking-tight text-cream">HOSE Quant</span>
       </div>
-      <nav className="flex flex-col gap-1">
+      {IS_DEMO && (
+        <div className="mb-6 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-center text-[11px] font-medium text-amber-300">
+          Demo mode &mdash; sample data, no live backend
+        </div>
+      )}
+      <nav className={`flex flex-col gap-1 ${IS_DEMO ? "" : "mt-6"}`}>
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = pathname?.startsWith(href);
           return (

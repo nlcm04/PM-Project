@@ -6,6 +6,40 @@ auto-invests: it only ever writes `PENDING` rows to `daily_stock_picks`; a
 stock becomes a tracked holding solely through a manual "Approve" click in the
 Daily Discovery UI.
 
+## Live demo on GitHub Pages
+
+**https://nlcm04.github.io/PM-Project/**
+
+This is the frontend only, built as a static export with sample/fixture data
+(`frontend/lib/sampleData.ts`) -- there is no live backend or database behind
+it. GitHub Pages can only serve static files, so it can't run FastAPI or
+Postgres; this demo exists to show the UI (Daily Discovery, Portfolio Health,
+institutional flow alerts), not real screening output. A "Demo mode" badge is
+shown in the sidebar so it's never confused for live data. Approve/Reject
+buttons work against the in-memory sample data (resets on reload).
+
+**How it's wired up** (`.github/workflows/deploy_frontend.yml`, runs on every
+push to `main` that touches `frontend/**`):
+1. Builds `frontend/` with `next build`, with `NEXT_PUBLIC_DEMO_MODE=true`
+   (routes every `lib/api.ts` call to the sample fixtures instead of a real
+   API) and `NEXT_PUBLIC_BASE_PATH=/PM-Project` (GitHub Pages project sites
+   are served under `/<repo-name>/`, not `/`) set in `next.config.mjs`, which
+   also sets `output: "export"` to produce plain static HTML/CSS/JS in
+   `frontend/out/` instead of requiring a Node server.
+2. Publishes `frontend/out/` via `actions/upload-pages-artifact` +
+   `actions/deploy-pages`.
+
+**One-time repo setting this depends on** (already done for this repo, but
+needed if you fork it or start fresh): Settings -> Pages -> Build and
+deployment -> Source must be **"GitHub Actions"**, not "Deploy from a
+branch". If it's on a branch source, the workflow's `deploy-pages` step will
+either fail or silently deploy nowhere useful.
+
+To point the demo at a real backend instead of sample data, drop
+`NEXT_PUBLIC_DEMO_MODE` from the workflow's `env:` block and set
+`NEXT_PUBLIC_API_BASE_URL` there to your hosted FastAPI URL -- see "What's
+real vs. what's a v1 foundation" below for what hosting that requires.
+
 ## What's real vs. what's a v1 foundation
 
 This was built and verified in one pass, but is honestly a **v1 foundation**,

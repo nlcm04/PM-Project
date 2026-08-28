@@ -8,7 +8,7 @@ __pycache__/
 # Node / Next.js
 node_modules/
 .next/
-out/
+frontend/out/
 
 # Env files (never commit real secrets)
 .env
